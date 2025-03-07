@@ -1,0 +1,273 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model for authentication and role-based access
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role     @default(PROFESSOR)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  professor   Professor? @relation("UserToProfessor")
+  coordinator Coordinator? @relation("UserToCoordinator")
+  director    Director? @relation("UserToDirector")
+}
+
+enum Role {
+  DIRECTOR
+  COORDINATOR
+  PROFESSOR
+}
+
+// Academic Director model
+model Director {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation("UserToDirector", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  approvedSchedules ScheduleApproval[]
+}
+
+// Academic Coordinator model
+model Coordinator {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation("UserToCoordinator", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  courses     Course[]
+  curricula   Curriculum[]
+  disciplines Discipline[]
+  schedules   Schedule[]
+}
+
+// Professor model
+model Professor {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  user           User     @relation("UserToProfessor", fields: [userId], references: [id], onDelete: Cascade)
+  specialization String?
+  bio            String?  @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  availability Availability[]
+  schedules    ScheduleEntry[]
+}
+
+// Course model
+model Course {
+  id            String   @id @default(cuid())
+  name          String
+  code          String   @unique
+  coordinatorId String
+  coordinator   Coordinator @relation(fields: [coordinatorId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  curricula  Curriculum[]
+  schedules  Schedule[]
+  periods    CoursePeriod[]
+}
+
+// Class Period model
+model Period {
+  id              String   @id @default(cuid())
+  name            String
+  startTime       String
+  endTime         String
+  durationMinutes Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  coursePeriods   CoursePeriod[]
+  availability    Availability[]
+  scheduleEntries ScheduleEntry[]
+}
+
+// Join table for Course and Period
+model CoursePeriod {
+  id        String   @id @default(cuid())
+  courseId  String
+  periodId  String
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  period    Period   @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([courseId, periodId])
+}
+
+// Curriculum model
+model Curriculum {
+  id            String   @id @default(cuid())
+  name          String
+  year          Int
+  courseId      String
+  course        Course   @relation(fields: [courseId], references: [id])
+  coordinatorId String
+  coordinator   Coordinator @relation(fields: [coordinatorId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  disciplines CurriculumDiscipline[]
+}
+
+// Discipline model
+model Discipline {
+  id            String   @id @default(cuid())
+  name          String
+  code          String   @unique
+  workloadHours Int
+  credits       Int
+  ementa        String?  @db.Text
+  coordinatorId String
+  coordinator   Coordinator @relation(fields: [coordinatorId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  curricula       CurriculumDiscipline[]
+  prerequisites   DisciplinePrerequisite[] @relation("DisciplineToPrerequisite")
+  requiredFor     DisciplinePrerequisite[] @relation("PrerequisiteToDiscipline")
+  scheduleEntries ScheduleEntry[]
+}
+
+// Join table for Curriculum and Discipline
+model CurriculumDiscipline {
+  id            String     @id @default(cuid())
+  curriculumId  String
+  disciplineId  String
+  semester      Int
+  curriculum    Curriculum @relation(fields: [curriculumId], references: [id], onDelete: Cascade)
+  discipline    Discipline @relation(fields: [disciplineId], references: [id], onDelete: Cascade)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@unique([curriculumId, disciplineId])
+}
+
+// Join table for Discipline prerequisites
+model DisciplinePrerequisite {
+  id              String     @id @default(cuid())
+  disciplineId    String
+  prerequisiteId  String
+  discipline      Discipline @relation("DisciplineToPrerequisite", fields: [disciplineId], references: [id], onDelete: Cascade)
+  prerequisite    Discipline @relation("PrerequisiteToDiscipline", fields: [prerequisiteId], references: [id], onDelete: Cascade)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@unique([disciplineId, prerequisiteId])
+}
+
+// Professor Availability model
+model Availability {
+  id          String    @id @default(cuid())
+  professorId String
+  professor   Professor @relation(fields: [professorId], references: [id], onDelete: Cascade)
+  dayOfWeek   DayOfWeek
+  periodId    String
+  period      Period    @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  isAvailable Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([professorId, dayOfWeek, periodId])
+}
+
+enum DayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+}
+
+// Schedule model (for a specific course, semester, and year)
+model Schedule {
+  id            String   @id @default(cuid())
+  courseId      String
+  course        Course   @relation(fields: [courseId], references: [id])
+  semester      Int
+  year          Int
+  coordinatorId String
+  coordinator   Coordinator @relation(fields: [coordinatorId], references: [id])
+  status        ScheduleStatus @default(DRAFT)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  entries   ScheduleEntry[]
+  approvals ScheduleApproval[]
+
+  @@unique([courseId, semester, year])
+}
+
+enum ScheduleStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+}
+
+// Schedule Entry model (individual class assignments)
+model ScheduleEntry {
+  id           String   @id @default(cuid())
+  scheduleId   String
+  schedule     Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  disciplineId String
+  discipline   Discipline @relation(fields: [disciplineId], references: [id])
+  professorId  String
+  professor    Professor @relation(fields: [professorId], references: [id])
+  dayOfWeek    DayOfWeek
+  periodId     String
+  period       Period   @relation(fields: [periodId], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([scheduleId, disciplineId, dayOfWeek, periodId])
+}
+
+// Schedule Approval model
+model ScheduleApproval {
+  id          String   @id @default(cuid())
+  scheduleId  String
+  schedule    Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  directorId  String
+  director    Director @relation(fields: [directorId], references: [id])
+  status      ApprovalStatus
+  feedback    String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([scheduleId, directorId])
+}
+
+enum ApprovalStatus {
+  APPROVED
+  REJECTED
+}
+
